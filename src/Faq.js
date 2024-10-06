@@ -137,18 +137,19 @@ function Faq() {
           style={{ position: "absolute", left: "5%", right: "10px", top: '44%' }}
         >
           <div className="mb-2">
-            <div className="bg-green-500 text-white text-center p-2 rounded-t-lg">
+            <div className="text-white text-center p-2 rounded-t-lg" style={{ backgroundColor: '#7BCE11'}}>
               I can help!
             </div>
             <div className="bg-gray-900 p-2 space-y-2 min-h-80 overflow-y-auto rounded-b-lg">
               {messages.map((message, index) => (
                 <div
                   key={index}
-                  className={`p-2 rounded-lg ${
+                  className={'p-2 rounded-lg text-white'}
+                  style={{ backgroundColor: `${
                     message.type === "bot"
-                      ? "bg-green-600 text-white"
-                      : "bg-gray-700 text-white"
-                  }`}
+                      ? "#578818"
+                      : "rgb(55 65 81)"
+                  }`}}
                 >
                   {message.text}
                 </div>
@@ -160,13 +161,15 @@ function Faq() {
           {showButtons && (
             <div className="flex justify-around space-x-4">
               <button
-                className="bg-green-500 p-2 rounded-lg text-white"
+                className="p-2 rounded-lg text-white"
+                style={{ backgroundColor: '#7BCE11'}}
                 onClick={handleSelectOption1}
               >
                 Analysis
               </button>
               <button
-                className="bg-green-500 p-2 rounded-lg text-white"
+                className="p-2 rounded-lg text-white"
+                style={{ backgroundColor: '#7BCE11'}}
                 onClick={handleSelectOption2}
               >
                 Drones

@@ -73,7 +73,7 @@ function Home() {
             />
 
             {/* Content with logo, text, and button */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ backgroundColor: 'rgba(123, 206, 17, 0.15)' }}>
+            <div className="absolute inset-0 flex flex-col items-center justify-center -mt-24" style={{ backgroundColor: 'rgba(123, 206, 17, 0.15)' }}>
                 {/* Logo */}
                 <img src="/images/logo-white.png" alt="Logo" className="max-w-xl -mb-20" />
                 

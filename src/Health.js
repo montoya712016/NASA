@@ -24,7 +24,7 @@ function Health() {
   return (
     <div className="h-screen flex" style={{ backgroundColor: '#171717E5', fontWeight: 500 }}>
       {/* Sidebar */}
-      <aside className="w-80 h-screen flex flex-col" style={{ backgroundColor: '#232323', color: '#828282', paddingLeft: '1rem' }}>
+      <aside className="min-w-80 h-screen flex flex-col" style={{ backgroundColor: '#232323', color: '#828282', paddingLeft: '1rem' }}>
         {/* Logo */}
         <div className="flex justify-center -mb-4 ">
           <img src="/images/logo.png" alt="Logo" className="h-40 w-auto" />
@@ -62,14 +62,25 @@ function Health() {
           </li>
 
         </ul>
+
       </aside>
 
       {/* Main content with full-screen image */}
-      <main className="w-4/5 h-screen">
+      <main className="h-screen w-screen">
         <img 
           src="/images/backgraph.png" // Caminho correto da imagem
           alt="Field Map"
-          className="w-full h-full object-contain"
+          className="w-full h-full object-cover"
+        />
+        <img 
+          src="/images/details.png" // Caminho correto da imagem
+          alt="Field Map"
+          className="absolute w-64 bottom-4 right-4"
+        />
+        <img 
+          src="/images/mini-graph.png" // Caminho correto da imagem
+          alt="Field Map"
+          className="absolute w-96 bottom-0 left-80"
         />
       </main>
     </div>

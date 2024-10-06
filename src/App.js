@@ -100,7 +100,7 @@ function App() {
             <div className="bg-[#232323] shadow-lg rounded-lg p-4">
               <h2 className="text-3xl font-bold" style={{ color: '#7BCE11', fontFamily: 'Inter', fontWeight: '400' }}>Culture Health</h2>
               <div className="flex justify-center">
-                <img src="/images/chart_health.png" alt="Culture Health Chart" className="rounded-md w-3/5" />
+                <img src="/images/chart_health.png" alt="Culture Health Chart" className="rounded-md w-4/5" />
               </div>
               <p className="text-center text-gray-400 mt-2">Latest vegetation stress analysis</p>
             </div>
@@ -126,7 +126,10 @@ function App() {
                 <p>Average: <span className="text-red-400 font-semibold">18 to 26 ºC</span></p>
               </div>
               <img src="/images/weather2.png" alt="Weather Data 2" className="w-3/5 rounded-md" />
+              
             </div>
+            <p className="text-center text-gray-400">Tap on the images to view more information.</p>
+            
             <div className="flex justify-center mt-4">
               <button
                 className="bg-green-600 text-white text-lg px-8 py-4 rounded-lg shadow-lg"
