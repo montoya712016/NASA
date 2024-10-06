@@ -19,9 +19,8 @@ function Home() {
 
     const handleClickFaq = () => {
         navigate('/faq'); // Redireciona para /faq
-      };
+    };
   
-      
     return (
         <div className="h-screen flex" style={{ backgroundColor: '#171717E5', fontWeight: 500 }}>
           {/* Sidebar */}
@@ -61,11 +60,10 @@ function Home() {
                 </div>
                 <FaChevronRight className="text-gray-400" size={16} style={{ marginLeft: 'auto', marginRight: '25px' }} />
               </li>
-
             </ul>
           </aside>
 
-          {/* Main content with full-screen image and login form */}
+          {/* Main content with full-screen image and content */}
           <main className="relative w-full h-screen">
             {/* Background image */}
             <img 
@@ -74,12 +72,35 @@ function Home() {
               className="w-full h-full object-cover"
             />
 
-            {/* Login Form */}
-            <div className="absolute inset-0 flex items-center justify-center" style={{backgroundColor: 'rgba(123, 206, 17, 0.15)'}}>
+            {/* Content with logo, text, and button */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ backgroundColor: 'rgba(123, 206, 17, 0.15)' }}>
+                {/* Logo */}
+                <img src="/images/logo-white.png" alt="Logo" className="max-w-xl -mb-20" />
+                
+                {/* Text with black transparent background */}
+                <div className="bg-black bg-opacity-70 text-white px-8 py-4 max-w-2xl rounded-lg" style={{fontFamily: 'Inter', fontWeight: 400}}>
+                    <p>
+                        Traditional agriculture faces challenges such as pests, climate variations, and high monitoring costs. 
+                        To address these issues, FieldSentinel combines artificial intelligence with NASA hyperspectral data and 
+                        vegetation indices, providing accurate insights into crop health.
+                    </p>
+                    <p className="mt-4">
+                        Through a user-friendly and intuitive interface, even farmers without data expertise can determine the 
+                        exact needs for water, pesticides, and fertilizers for each area of their farm. This information, integrated 
+                        with automated drones/UAVs, enables the detection and treatment of problems before they escalate, ensuring 
+                        bountiful and healthy harvests.
+                    </p>
+                </div>
 
-                <img src="/images/logo-white.png" alt="Logo" className="max-w-xl" />
-            
-              </div>
+                {/* Button */}
+                <button 
+                  className="mt-6 bg-green-600 text-white py-3 px-8 rounded transition-colors w-96 h-20"
+                  style={{ backgroundColor: 'rgba(123, 206, 17, 0.6)', fontSize: '18px', fontWeight: '500', borderRadius: '4px', fontFamily: 'inter' }}
+                  onClick={() => navigate('/learn-more')} // Define the desired action for the button
+                >
+                  Learn More
+                </button>
+            </div>
           </main>
         </div>
     );
