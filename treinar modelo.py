@@ -1,223 +1,232 @@
+import warnings
+warnings.filterwarnings('ignore') 
 import torch
-import torchvision
-import os
-import numpy as np
-from PIL import Image
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
-from torchvision.transforms import functional as F
-from torch.utils.data import DataLoader, Dataset
-from torchvision.ops import box_iou
+import torch.nn as nn
+from torch.utils.data import DataLoader
+import torchvision.transforms as transforms
+from torchvision.datasets import ImageFolder
+import torch.nn.functional as F
+import time
 
-# Diretório de dados
-root_dir = "C:/Users/Olá/programacao/nasa/leaf detectation"
+# Diretórios de treinamento, validação e teste
+Root_dir = "C:\\Users\\Olá\\programacao\\nasa\\New Plant Diseases Dataset(Augmented)"
+train_dir = Root_dir + "/train"
+valid_dir = Root_dir + "/valid"
+test_dir = Root_dir + "/test"
 
-# Dataset YOLO customizado
-class LeafDataset(Dataset):
-    def __init__(self, img_folder, transforms=None):
-        self.img_folder = img_folder
-        self.transforms = transforms
-        self.imgs = [img for img in sorted(os.listdir(img_folder)) if img.endswith('.jpg')]
-        self.labels = [os.path.splitext(img)[0] + '.txt' for img in self.imgs]
+# Definir transformações para data augmentation
+train_transforms = transforms.Compose([
+    transforms.RandomResizedCrop(256),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+])
 
+# Transformações para validação e teste
+test_transforms = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(256),
+    transforms.ToTensor(),
+])
+
+# Carregar datasets com as transformações correspondentes
+train = ImageFolder(train_dir, transform=train_transforms)
+valid = ImageFolder(valid_dir, transform=test_transforms)
+test = ImageFolder(test_dir, transform=test_transforms)
+
+batch_size = 32
+
+# DataLoaders para treinamento, validação e teste
+train_dataloader = DataLoader(train, batch_size, shuffle=True, num_workers=2, pin_memory=True)
+valid_dataloader = DataLoader(valid, batch_size, num_workers=2, pin_memory=True)
+test_dataloader = DataLoader(test, batch_size, num_workers=2, pin_memory=True)
+
+# Funções para dispositivo
+def get_default_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    else:
+        return torch.device("cpu")
+    
+def to_device(data, device):
+    if isinstance(data, (list, tuple)):
+        return [to_device(x, device) for x in data]
+    return data.to(device, non_blocking=True)
+
+class DeviceDataLoader():
+    def __init__(self, dataloader, device):
+        self.dataloader = dataloader
+        self.device = device
+        
+    def __iter__(self):
+        for b in self.dataloader:
+            yield to_device(b, self.device)
+        
     def __len__(self):
-        return len(self.imgs)
+        return len(self.dataloader)
+    
+device = get_default_device()
 
-    def __getitem__(self, idx):
-        img_name = self.imgs[idx]
-        label_name = self.labels[idx]
-        img_path = os.path.join(self.img_folder, img_name)
-        label_path = os.path.join(self.img_folder, label_name)
+# Movendo data loaders para o dispositivo
+train_dataloader = DeviceDataLoader(train_dataloader, device)
+valid_dataloader = DeviceDataLoader(valid_dataloader, device)
+test_dataloader = DeviceDataLoader(test_dataloader, device)
+
+# Função de acurácia
+def accuracy(outputs, labels):
+    _, preds = torch.max(outputs, dim=1)
+    return torch.tensor(torch.sum(preds == labels).item() / len(preds))
+
+class ImageClassificationBase(nn.Module):
+    
+    def training_step(self, batch):
+        images, labels = batch 
+        out = self(images)                  
+        loss = F.cross_entropy(out, labels)
+        return loss
+    
+    def validation_step(self, batch):
+        images, labels = batch 
+        out = self(images)
+        loss = F.cross_entropy(out, labels)
+        acc = accuracy(out, labels)
+        return {'val_loss': loss.detach(), 'val_acc': acc}
         
-        # Verifica se o arquivo existe
-        if not os.path.exists(img_path):
-            print(f"Image file does not exist: {img_path}")
-        if not os.path.exists(label_path):
-            print(f"Label file does not exist: {label_path}")
+    def validation_epoch_end(self, outputs):
+        batch_losses = [x['val_loss'] for x in outputs]
+        epoch_loss = torch.stack(batch_losses).mean()
+        batch_accs = [x['val_acc'] for x in outputs]
+        epoch_acc = torch.stack(batch_accs).mean()
+        return {'val_loss': epoch_loss.item(), 'val_acc': epoch_acc.item()}
+    
+    def epoch_end(self, epoch, result):
+        print(f"Epoch [{epoch+1}], train_loss: {result['train_loss']:.4f}, "
+              f"val_loss: {result['val_loss']:.4f}, val_acc: {result['val_acc']:.4f}, "
+              f"test_loss: {result['test_loss']:.4f}, test_acc: {result['test_acc']:.4f}")
         
-        # Carrega a imagem e converte para RGB
-        img = Image.open(img_path).convert('RGB')
-        img_width, img_height = img.size  # Note: PIL usa (width, height)
+# Bloco de convolução com BatchNormalization
+def ConvBlock(in_channels, out_channels, pool=False):
+    layers = [nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+             nn.BatchNorm2d(out_channels),
+             nn.ReLU(inplace=True)]
+    if pool:
+        layers.append(nn.MaxPool2d(4))
+    return nn.Sequential(*layers)
 
-        # Inicializa listas para armazenar as caixas e rótulos
-        boxes = []
-        labels = []
+# Arquitetura do modelo
+class CNN_NeuralNet(ImageClassificationBase):
+    def __init__(self, in_channels, num_diseases):
+        super().__init__()
         
-        # Lê o arquivo de rótulos
-        with open(label_path, 'r') as file:
-            for line in file.readlines():
-                line = line.strip().split()
-                class_id = int(line[0])
-                x_center, y_center, width, height = map(float, line[1:])
+        self.conv1 = ConvBlock(in_channels, 64)
+        self.conv2 = ConvBlock(64, 128, pool=True) 
+        self.res1 = nn.Sequential(ConvBlock(128, 128), ConvBlock(128, 128))
+        
+        self.conv3 = ConvBlock(128, 256, pool=True) 
+        self.conv4 = ConvBlock(256, 512, pool=True)
+        
+        self.res2 = nn.Sequential(ConvBlock(512, 512), ConvBlock(512, 512))
+        self.classifier = nn.Sequential(nn.MaxPool2d(4),
+                                       nn.Flatten(),
+                                       nn.Linear(512, num_diseases))
+        
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = self.res1(out) + out
+        out = self.conv3(out)
+        out = self.conv4(out)
+        out = self.res2(out) + out
+        out = self.classifier(out)
+        return out  
+    
+model = to_device(CNN_NeuralNet(3, len(train.classes)), device)
 
-                # Converte coordenadas do YOLO para formato de caixas delimitadoras
-                x_min = (x_center - width / 2) * img_width
-                y_min = (y_center - height / 2) * img_height
-                x_max = (x_center + width / 2) * img_width
-                y_max = (y_center + height / 2) * img_height
-
-                boxes.append([x_min, y_min, x_max, y_max])
-                labels.append(1)  # Usando 1 para a classe "folha"
-
-        # Converte para tensores
-        boxes = torch.as_tensor(boxes, dtype=torch.float32)
-        labels = torch.as_tensor(labels, dtype=torch.int64)
-
-        target = {}
-        target['boxes'] = boxes
-        target['labels'] = labels
-
-        img = F.to_tensor(img)
-
-        return img, target
-
-# Função de colagem personalizada para o DataLoader
-def collate_fn(batch):
-    return tuple(zip(*batch))
-
-# Função de treino
-def train_one_epoch(model, optimizer, data_loader, device, epoch):
-    model.train()
-    loss_sum = 0
-    for batch_idx, (images, targets) in enumerate(data_loader):
-        images = list(image.to(device) for image in images)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-
-        # Calcula as perdas
-        loss_dict = model(images, targets)
-        losses = sum(loss for loss in loss_dict.values())
-
-        optimizer.zero_grad()
-        losses.backward()
-        optimizer.step()
-
-        loss_sum += losses.item()
-
-        # Print a cada batch para acompanhar o progresso
-        if batch_idx % 10 == 0:
-            print(f"Epoch {epoch+1} | Batch {batch_idx}/{len(data_loader)} | Loss: {losses.item():.4f}")
-
-    avg_loss = loss_sum / len(data_loader)
-    print(f"Epoch {epoch+1} Loss: {avg_loss:.4f}")
-    return avg_loss
-
-# Função de avaliação
 @torch.no_grad()
-def evaluate(model, data_loader, device):
+def evaluate(model, val_loader):
     model.eval()
-    all_detections = []
-    all_annotations = []
-    for images, targets in data_loader:
-        images = list(img.to(device) for img in images)
-        outputs = model(images)
-        for i in range(len(images)):
-            preds = outputs[i]
-            gt = targets[i]
-            # Coletando detecções e anotações
-            all_detections.append({'boxes': preds['boxes'].cpu(), 'scores': preds['scores'].cpu(), 'labels': preds['labels'].cpu()})
-            all_annotations.append({'boxes': gt['boxes'], 'labels': gt['labels']})
-    # Calcula mAP
-    mAP = calculate_mAP(all_detections, all_annotations)
-    return mAP
+    outputs = [model.validation_step(batch) for batch in val_loader]
+    return model.validation_epoch_end(outputs)
 
-def calculate_mAP(detections, annotations, iou_threshold=0.5):
-    # Cálculo simples de mAP para uma classe
-    true_positives = []
-    scores = []
-    num_gt_boxes = 0
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
+    
+def fit_OneCycle(epochs, max_lr, model, train_loader, val_loader, test_loader, weight_decay=0,
+                 grad_clip=None, opt_func=torch.optim.Adam):
+    torch.cuda.empty_cache()
+    history = []
+    
+    optimizer = opt_func(model.parameters(), max_lr, weight_decay=weight_decay)
+    sched = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr, epochs=epochs, steps_per_epoch=len(train_loader))
+    
+    best_test_acc = 0
+    epochs_no_improve = 0
+    n_epochs_stop = 5  # Número de épocas sem melhoria para parar
+    
+    for epoch in range(epochs):
+        model.train()
+        train_losses = []
+        lrs = []
+        for batch in train_loader:
+            loss = model.training_step(batch)
+            train_losses.append(loss)
+            loss.backward()
 
-    for det, ann in zip(detections, annotations):
-        gt_boxes = ann['boxes']
-        num_gt_boxes += len(gt_boxes)
-        detected = []
-        pred_boxes = det['boxes']
-        pred_scores = det['scores']
+            if grad_clip: 
+                nn.utils.clip_grad_value_(model.parameters(), grad_clip)
+                
+            optimizer.step()
+            optimizer.zero_grad()
+            lrs.append(get_lr(optimizer))
+            sched.step()
 
-        for i in range(len(pred_boxes)):
-            box = pred_boxes[i]
-            score = pred_scores[i]
-            scores.append(score)
-
-            if len(gt_boxes) == 0:
-                true_positives.append(0)
-                continue
-
-            ious = box_iou(box.unsqueeze(0), gt_boxes)
-            max_iou, max_iou_idx = ious.max(1)
-            if max_iou >= iou_threshold and max_iou_idx not in detected:
-                true_positives.append(1)
-                detected.append(max_iou_idx.item())
-            else:
-                true_positives.append(0)
-
-    if len(true_positives) == 0:
-        return 0.0
-
-    # Ordena por score
-    scores = torch.tensor(scores)
-    true_positives = torch.tensor(true_positives)
-    sorted_indices = torch.argsort(scores, descending=True)
-    true_positives = true_positives[sorted_indices]
-
-    # Calcula cumulativamente TP e FP
-    cumulative_tp = torch.cumsum(true_positives, dim=0)
-    cumulative_fp = torch.cumsum(1 - true_positives, dim=0)
-
-    # Calcula precisão e recall
-    precision = cumulative_tp / (cumulative_tp + cumulative_fp + 1e-6)
-    recall = cumulative_tp / num_gt_boxes
-
-    # Calcula AP
-    ap = torch.trapz(precision, recall)
-
-    return ap.item()
+        # Avaliar no conjunto de validação e teste
+        result = evaluate(model, val_loader)
+        test_result = evaluate(model, test_loader)
+        result['test_loss'] = test_result['val_loss']
+        result['test_acc'] = test_result['val_acc']
+        result['train_loss'] = torch.stack(train_losses).mean().item()
+        result['lrs'] = lrs
+        model.epoch_end(epoch, result)
+        history.append(result)
+        
+        # Verificar melhoria na acurácia do teste
+        if result['test_acc'] > best_test_acc:
+            best_test_acc = result['test_acc']
+            epochs_no_improve = 0
+            # Salvar o melhor modelo até agora
+            torch.save(model.state_dict(), f'C:\\Users\\Olá\\programacao\\nasa\\New Plant Diseases Dataset(Augmented)\\model_epoch_{epoch+1}.pth')
+            print(f"Modelo salvo: model_epoch_{epoch+1}.pth")
+        else:
+            epochs_no_improve += 1
+            print(f"Acurácia no teste não melhorou por {epochs_no_improve} época(s).")
+        
+        # Verificar se devemos parar o treinamento
+        if epochs_no_improve >= n_epochs_stop:
+            print('Early stopping!')
+            break
+        
+    return history
 
 if __name__ == "__main__":
-    # Datasets para treino, validação e teste
-    train_dataset = LeafDataset(os.path.join(root_dir, "train"))
-    valid_dataset = LeafDataset(os.path.join(root_dir, "valid"))
-    test_dataset = LeafDataset(os.path.join(root_dir, "test"))
 
-    # DataLoaders
-    batch_size = 4
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, collate_fn=collate_fn)
-    valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, num_workers=0, collate_fn=collate_fn)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0, collate_fn=collate_fn)
+    start_time = time.time()
+    
+    print("Avaliando o modelo antes do treinamento...")
+    history = [evaluate(model, valid_dataloader)]
+    print("Acurácia e perda inicial na validação:", history)
+    
+    num_epoch = 50
+    lr_rate = 0.01
+    grad_clip = 0.15
+    weight_decay = 1e-4
+    optims = torch.optim.Adam
 
-    # Modelo Faster R-CNN pré-treinado
-    model = fasterrcnn_resnet50_fpn(weights='DEFAULT')
+    print("Iniciando treinamento...")
+    history += fit_OneCycle(num_epoch, lr_rate, model, train_dataloader, valid_dataloader, test_dataloader,
+                            grad_clip=grad_clip, 
+                            weight_decay=weight_decay, 
+                            opt_func=optims)
 
-    # Ajusta a cabeça do modelo para o número de classes (1 classe de folha + fundo)
-    num_classes = 2  # 1 classe (folha) + fundo
-    in_features = model.roi_heads.box_predictor.cls_score.in_features
-    model.roi_heads.box_predictor = torchvision.models.detection.faster_rcnn.FastRCNNPredictor(in_features, num_classes)
-
-    # Otimizador
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.005, momentum=0.9, weight_decay=0.0005)
-
-    # Envia o modelo para GPU, se disponível
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    model.to(device)
-
-    # Variável para armazenar o melhor mAP
-    best_mAP = 0.0
-
-    # Treinamento
-    num_epochs = 10
-    for epoch in range(num_epochs):
-        print(f"\n--- Epoch {epoch+1}/{num_epochs} ---")
-        train_loss = train_one_epoch(model, optimizer, train_loader, device, epoch)
-
-        print(f"Avaliando o modelo na validação após epoch {epoch+1}...")
-        val_mAP = evaluate(model, valid_loader, device)
-        print(f"Validation mAP: {val_mAP:.4f}")
-
-        print(f"Avaliando o modelo no conjunto de teste após epoch {epoch+1}...")
-        test_mAP = evaluate(model, test_loader, device)
-        print(f"Test mAP: {test_mAP:.4f}")
-
-        # Salvando o modelo após cada época
-        model_save_path = f'C:\\Users\\Olá\\programacao\\nasa\\leaf detectation\\model_epoch_{epoch+1}.pth'
-        torch.save(model.state_dict(), model_save_path)
-        print(f"Modelo salvo em: {model_save_path}")
-
-    print("Treinamento concluído.")
+    end_time = time.time()
+    print(f"Treinamento concluído em {end_time - start_time:.2f} segundos")
